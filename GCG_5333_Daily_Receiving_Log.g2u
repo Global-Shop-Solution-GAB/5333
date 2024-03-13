@@ -1,0 +1,175 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.UDT.RcvLog.Define("BIRUNID",Long)
+Variable.UDT.RcvLog.Define("Receiver_No",String,Receiver_No)
+Variable.UDT.RcvLog.Define("Purchase_Order",String,Purchase_Order)
+Variable.UDT.RcvLog.Define("PO_Line",String,PO_Line)
+Variable.UDT.RcvLog.Define("Date_Received",String,Date_Received)
+Variable.UDT.RcvLog.Define("Part",String,Part)
+Variable.UDT.RcvLog.Define("Location",String,Location)
+Variable.UDT.RcvLog.Define("Qty_Received",Float,Qty_Received)
+Variable.UDT.RcvLog.Define("UM",String)
+Variable.UDT.RcvLog.Define("Descripiton",String,Description)
+Variable.UDT.RcvLog.Define("Vendor",String,Vendor)
+Variable.UDT.RcvLog.Define("Name_Vendor",String)
+Variable.UDT.RcvLog.Define("Flag_Notes",String)
+Variable.UDT.RcvLog.Define("Text_Seq",String)
+Variable.UDT.RcvLog.Define("Receiver_Text",String)
+Variable.uGlobal.uRcvLog.Declare("RcvLog")
+Variable.Global.iBIRunID.Declare(Long,0)
+Variable.Global.iLogID.Declare(Long,0)
+Variable.Global.iRptID.Declare(Long,0)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+
+F.ODBC.Connection!Con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+F.Intrinsic.Control.CallSub(Collectdata)
+F.Intrinsic.Control.CallSub(Saveandemailrpt)
+F.Intrinsic.Control.CallSub(Unload)
+
+Program.Sub.Main.End
+
+Program.Sub.Unload.Start
+
+F.ODBC.Connection!Con.Close
+F.Intrinsic.Control.End
+
+Program.Sub.Unload.End
+
+Program.Sub.collectData.Start
+F.Intrinsic.Control.SetErrorHandler("collectData_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+V.Local.sSel.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.sRet.Declare(String)
+V.Local.iFor.Declare(Long)
+V.Local.iForB.Declare(Long)
+V.Local.iRedim.Declare(Long)
+V.Local.iLineCount.Declare(Long)
+V.Local.iThru.Declare(Long)
+V.Local.iLogID.Declare(Long)
+V.Local.sRptName.Declare(String)
+V.Local.sSQL.Declare(String)
+
+V.Local.sRptName.Set("GCG_5333_Daily_Receiving_Log.rpt")
+F.Global.BI.GetIDFromName(V.Local.sRptName,V.Global.iRptID)
+f.Global.BI.GetRunID(v.Global.iBIRunID)
+F.Global.BI.StartLogging(v.Global.iBIRunID,v.Global.iRptID,-1,V.Local.sRptName,v.Global.iLogID)
+
+' format date for query
+F.Intrinsic.String.Format(V.Ambient.Date,"yyyy-mm-dd",V.Local.sDate)
+'F.Intrinsic.String.Format(09/01/2018,"yyyy-mm-dd",V.Local.sDate)
+
+V.Local.sSQL.Set("SELECT CAST(0 AS DOUBLE) AS BIRUNID, POR.Receiver_No, POR.Purchase_Order, LEFT(POR.PO_Line,3) AS PO_Line, CAST(POR.Date_Received AS CHAR(10)) AS Date_Received, POR.Part, POR.Location, POR.Qty_Received, IM.UM_INVENTORY AS UM, POR.Description, POR.Vendor, VM.Name_Vendor, POR.USER_ID AS Received_By, PRT.Text AS Receiver_Text FROM V_PO_HISTORY POR LEFT OUTER JOIN V_VENDOR_MASTER VM ON POR.Vendor = VM.Vendor LEFT OUTER JOIN V_INVENTORY_MSTR IM ")
+F.Intrinsic.String.Build("{0} ON POR.Part = IM.Part LEFT OUTER JOIN V_PO_RECEIVER_TEXT PRT ON POR.Receiver_No = PRT.RCVR AND POR.Purchase_Order = PRT.PO AND POR.PO_Line = LEFT(PRT.PO_LINE,3) WHERE POR.Date_received >= '{1}'",V.Local.sSQL,v.Local.sDate,V.Local.sSQL)
+
+'V.Local.sSQL,V.Local.sDate,V.Local.sSQL
+
+F.Data.DataTable.CreateFromSQL("POReceiver","con",V.Local.sSQL)
+F.Data.DataTable.SetValue("POReceiver",-1,"BIRUNID",V.Global.iBIRunID)
+F.Data.DataTable.SaveToDB("POReceiver","con","GCG_5333_DAILY_RCVR","",128,"BIRUNID@!@BIRUNID*!*RECEIVER_NO@!@RECEIVER_NO*!*PURCHASE_ORDER@!@PURCHASE_ORDER*!*PO_LINE@!@PO_LINE*!*DATE_RECEIVED@!@DATE_RECEIVED*!*PART@!@PART*!*LOCATION@!@LOCATION*!*QTY_RECEIVED@!@QTY_RECEIVED*!*UM@!@UM*!*DESCRIPTION@!@DESCRIPTION*!*VENDOR@!@VENDOR*!*NAME_VENDOR@!@NAME_VENDOR*!*RECEIVER_TEXT@!@RECEIVER_TEXT*!*RECEIVED_BY@!@RECEIVED_BY")
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("collectData_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5333_Daily_Receiving_Log.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.collectData.End
+
+Program.Sub.SaveAndEmailRpt.Start
+F.Intrinsic.Control.SetErrorHandler("SaveAndEmailRpt_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+V.Local.sRptName.Declare(String)
+V.Local.sParams.Declare(String)
+V.Local.sVals.Declare(String)
+V.Local.sSaveName.Declare(String)
+V.Local.sContactName.Declare(String)
+V.Local.sContactEmail.Declare(String)
+V.Local.sContactFile.Declare(String)
+V.Local.bExists.Declare(Boolean)
+V.Local.sSenderName.Declare(String)
+V.Local.sSenderEmail.Declare(String)
+V.Local.iVal.Declare(Long)
+V.Local.sID.Declare(String)
+V.Local.sSender.Declare(String)
+V.Local.sAttachment.Declare(String)
+v.Local.sRecipient.Declare(String)
+v.Local.sRecipientEmail.Declare(String)
+v.Local.sMembers.Declare(String)
+v.Local.sUser.Declare(String)
+v.Local.sList.Declare(String)
+
+V.Local.iFor.Declare(Long)
+
+V.Local.sParams.Set("BIRUNID*!*USERID")
+F.Intrinsic.String.Build("{0}*!*{1}",V.Global.iBIRunID,V.Caller.User,V.Local.sVals)
+
+f.Global.Security.GetUserID(v.Caller.User,v.Caller.CompanyCode,v.Local.sID)
+
+
+F.Intrinsic.String.Build("{0}\Daily_Receiving_Log.pdf",V.Caller.FilesDir,V.Local.sSaveName)
+
+F.Intrinsic.String.Build("Daily_Receiving_Log.pdf*!*{0}",V.Caller.FilesDir,V.Local.sAttachment)
+
+F.Global.BI.StopLogging(v.Global.iLogID)
+
+F.Global.BI.RunReportPreProcessor(v.Global.iBIRunID,v.Global.iLogID,v.Local.sParams,v.Local.sVals,"",4,True,"",1,"",0,v.Local.sSaveName,"",v.Global.iBIRunID)
+
+f.Global.Security.GetGroupMembers("RECLOG",V.Caller.CompanyCode,v.Local.sMembers)
+f.Intrinsic.String.Split(v.Local.sMembers,"*!*",v.Local.sMembers)
+
+f.Intrinsic.Control.For(v.Local.iFor,0,v.Local.sMembers.UBound,1)
+	v.Local.sUser.Set(v.Local.sMembers(v.Local.iFor))
+	f.Global.Security.GetFullName(v.Local.sUser,v.Caller.CompanyCode,v.Local.sRecipient)
+	f.Global.Security.GetUserEmail(v.Local.sUser,v.Caller.CompanyCode,v.Local.sRecipientEmail)	
+	f.Intrinsic.Control.If(v.Local.iFor,=,0)
+		f.Intrinsic.String.Build("{0}*!*{1}",v.Local.sRecipient,v.Local.sRecipientEmail,v.Local.sList)
+	f.Intrinsic.Control.else
+		f.Intrinsic.String.Build("{0}@!@{1}*!*{2}",v.Local.sList,v.Local.sRecipient,v.Local.sRecipientEmail,v.Local.sList)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Next(v.Local.iFor)
+
+F.Global.Security.GetUserEmail("SUPERVSR",V.Caller.CompanyCode,V.Local.sSenderEmail)
+F.Intrinsic.String.Build("{0}*!*RECEIVING LOG",V.Local.sSenderEmail,V.Local.sSender)
+
+
+f.Global.Messaging.QueueMessage(v.Caller.CompanyCode,v.Local.sID,"","Daily Receiver Log",v.Local.sSender,V.Local.sList,"See attached",7,"",False,,,,,,,,v.Local.sAttachment,False)
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("SaveAndEmailRpt_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5333_Daily_Receiving_Log.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.Debug.SetLA(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.SaveAndEmailRpt.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_Daily_Receiving_Log$}$JCT$}$4/13/2014
+${$2$}$$}$$}$0$}$4$}$Global/Files/AutoRecLogEmail.txt  $}$4/13/2014 2:30:07 PM$}$contact name and email list
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$For Designing Display, per quote 5546
+Report will run Daily on the Task Scheduler. Will be a replication of the Standard Purchasing>Reports>Receiving Log.
+Select today's date only and ALL vendors. Receiving comments will ALWAYS be printed.
+Report will be run, exported to server as PDF, and then emailed to contact.
+Contact Name and email will be modifiable from a text file in Global/Files/AutoRecLogEmail.txt
+
+Program.Sub.Comments.End
+
